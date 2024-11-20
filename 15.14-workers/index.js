@@ -105,3 +105,88 @@ class PageState {
     return u.href;
   }
 }
+
+const ROWS = 3;
+const COLS = 4;
+const NUMWORKERS = navigator.hardwareConcurrency || 2;
+
+class MandelbrotCanvas {
+  /**
+   *
+   * @param {HTMLCanvasElement} canvas
+   */
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.context = canvas.getContext("2d");
+    this.workerPool = new WorkerPool(NUMWORKERS, "worker-mandelbrot.js");
+
+    this.tiles = null;
+    this.pendingRender = null;
+    this.wantsRender = false;
+    this.resizeTimer = null;
+    this.colorTable = null;
+
+    // event handlers
+    this.canvas.addEventListener("pointerdown", (e) => this.handlePointer(e));
+    window.addEventListener("keydown", (e) => this.handleKey(e));
+    window.addEventListener("resize", (e) => this.handleResize(e));
+    window.addEventListener("popstate", (e) => this.setState(e.state, false));
+
+    // init state
+    this.state = PageState.fromURL(window.location) || PageState.initialState();
+
+    // save state in the history
+    history.replaceState(this.state, "", this.state.toURL());
+
+    // set canvas size and get an array of tiles that cover it
+    this.setSize();
+
+    // render into de canvas
+    this.render();
+  }
+
+  setSize() {
+    this.width = this.canvas.width = window.innerWidth;
+    this.height = this.canvas.height = window.innerHeight;
+    this.tiles = [...Tile.tiles(this.width, this.height, ROWS, COLS)];
+  }
+
+  setState(f, save = true) {
+    if (typeof f === "function") f(this.state);
+
+    if (typeof f === "object") {
+      for (let property in f) {
+        this.state[property] = f[property];
+      }
+    }
+
+    this.render();
+
+    if (save) history.pushState(this.state, "", this.state.toURL());
+  }
+
+  render() {
+    if (this.pendingRender) {
+      this.wantsRender = true;
+      return;
+    }
+
+    let { cx, cy, perPixel, maxIterations } = this.state;
+    let x0 = cx - perPixel * (this.width / 2);
+    let y0 = cy - perPixel * (this.height / 2);
+
+    let promises = this.tiles.map((tile) =>
+      this.workerPool.addWork({
+        tile,
+        x0: x0 + tile.x * perPixel,
+        y0: y0 + tile.y * perPixel,
+        perPixel,
+        maxIterations,
+      })
+    );
+
+    this.pendingRender = Promise.all(promises).then((res) => {
+      
+    });
+  }
+}
